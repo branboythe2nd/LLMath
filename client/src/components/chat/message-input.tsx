@@ -1,15 +1,15 @@
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
 import { insertMessageSchema, type Message } from "@shared/schema";
 import { useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
 import { ImageIcon, SendIcon } from "lucide-react";
-import { useState } from "react";
+import { useState } from "react"; // <-- Import useState
+import { useForm } from "react-hook-form";
 
 interface MessageInputProps {
   onResponse: (message: Message) => void;
@@ -25,12 +25,13 @@ export default function MessageInput({ onResponse }: MessageInputProps) {
       prompt: "",
       imageUrl: null,
     },
+    mode: "onChange", // Ensures prompt validation only happens when needed
   });
 
   const mutation = useMutation({
     mutationFn: async (data: FormData) => {
       const res = await apiRequest("POST", "/api/chat", {
-        prompt: data.get("prompt"),
+        prompt: data.get("prompt") || (imagePreview ? "Describe the image." : ""),
         imageUrl: imagePreview || null,
       });
       return res.json();
@@ -60,14 +61,29 @@ export default function MessageInput({ onResponse }: MessageInputProps) {
     }
   };
 
+  const handleSubmit = async (data: { prompt: string }) => {
+    const formData = new FormData();
+
+    if (data.prompt.trim()) {
+      formData.append("prompt", data.prompt);
+    } else if (imagePreview) {
+      formData.append("prompt", "Extract the text");
+    } else {
+      toast({
+        title: "Error",
+        description: "Please enter a prompt or upload an image.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    mutation.mutate(formData);
+  };
+
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit((data) => {
-          const formData = new FormData();
-          formData.append("prompt", data.prompt);
-          mutation.mutate(formData);
-        })}
+        onSubmit={form.handleSubmit(handleSubmit)}
         className="space-y-4"
       >
         <FormField
@@ -77,9 +93,15 @@ export default function MessageInput({ onResponse }: MessageInputProps) {
             <FormItem>
               <FormControl>
                 <Textarea
-                  placeholder="Enter your prompt here..."
+                  placeholder="Enter your prompt here (optional)..."
                   className="min-h-[100px] resize-none"
                   {...field}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit(form.getValues());
+                    }
+                  }}
                 />
               </FormControl>
             </FormItem>
@@ -95,12 +117,7 @@ export default function MessageInput({ onResponse }: MessageInputProps) {
               id="image-upload"
               onChange={handleImageUpload}
             />
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              asChild
-            >
+            <Button type="button" variant="outline" size="icon" asChild>
               <label htmlFor="image-upload" className="cursor-pointer">
                 <ImageIcon className="h-4 w-4" />
               </label>
@@ -111,6 +128,10 @@ export default function MessageInput({ onResponse }: MessageInputProps) {
             type="submit"
             className="ml-auto"
             disabled={mutation.isPending}
+            onClick={(e) => {
+              e.preventDefault(); // Prevent focusing the prompt box
+              handleSubmit(form.getValues());
+            }}
           >
             {mutation.isPending ? (
               "Processing..."

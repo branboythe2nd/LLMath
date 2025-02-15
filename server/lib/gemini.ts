@@ -4,24 +4,31 @@ import "dotenv/config";
 // Initialize Gemini API with API Key
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-export async function generateResponse(prompt: string, imageUrl?: string | null) {
+export async function generateResponse(prompt?: string | null, imageUrl?: string | null) {
   let model;
   let result;
 
   if (imageUrl) {
-    model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
+    model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
     const imageParts = [{ inlineData: { mimeType: "image/png", data: await fetchBase64(imageUrl) } }];
 
+    // Create content array dynamically based on prompt availability
+    const contentParts = prompt 
+      ? [{ text: prompt }, ...imageParts]  // If prompt exists, send both text + image
+      : imageParts;  // If no prompt, send only image
+
     result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: prompt }, ...imageParts] }],
+      contents: [{ role: "user", parts: contentParts }],
     });
-  } else {
+  } else if (prompt) {
     model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
     result = await model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
+  } else {
+    return "Error: No prompt or image provided";
   }
 
   return result?.response?.text() || "No response generated";
