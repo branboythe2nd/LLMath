@@ -4,35 +4,46 @@ import express2 from "express";
 // shared/schema.ts
 import { z } from "zod";
 var insertMessageSchema = z.object({
-  prompt: z.string().min(1, "Prompt is required"),
-  imageUrl: z.string().nullable().optional()
+  prompt: z.string().optional(),
+  // Make prompt optional
+  imageUrl: z.string().nullable()
+  // Ensure imageUrl can be null or a string
+}).refine((data) => data.prompt || data.imageUrl, {
+  message: "Either a prompt or an image is required.",
+  path: ["prompt"]
 });
 
 // server/routes.ts
 import { createServer } from "http";
 
-// server/lib/claude.ts
-import Anthropic from "@anthropic-ai/sdk";
+// server/lib/gemini.ts
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import "dotenv/config";
-var anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY
-});
+var genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 async function generateResponse(prompt, imageUrl) {
-  try {
-    let messages = [{ role: "user", content: prompt }];
-    if (imageUrl) {
-      messages.push({ role: "user", content: `Here is an image: ${imageUrl}` });
-    }
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 500,
-      messages
+  let model;
+  let result;
+  if (imageUrl) {
+    model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const imageParts = [{ inlineData: { mimeType: "image/png", data: await fetchBase64(imageUrl) } }];
+    const contentParts = prompt ? [{ text: prompt }, ...imageParts] : imageParts;
+    result = await model.generateContent({
+      contents: [{ role: "user", parts: contentParts }]
     });
-    return response?.content?.[0]?.text || "No response generated.";
-  } catch (error) {
-    console.error("Claude API Error:", error);
-    return "Error generating response.";
+  } else if (prompt) {
+    model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }]
+    });
+  } else {
+    return "Error: No prompt or image provided";
   }
+  return result?.response?.text() || "No response generated";
+}
+async function fetchBase64(url) {
+  const response = await fetch(url);
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer).toString("base64");
 }
 
 // server/routes.ts
