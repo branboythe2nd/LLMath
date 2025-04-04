@@ -9,7 +9,7 @@ export async function generateResponse(prompt?: string | null, imageUrl?: string
   let result;
 
   if (imageUrl) {
-    model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    model = genAI.getGenerativeModel({ model: "gemini-1.5" });
 
     const imageParts = [{ inlineData: { mimeType: "image/png", data: await fetchBase64(imageUrl) } }];
 
